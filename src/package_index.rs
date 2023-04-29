@@ -12,6 +12,7 @@ use url::Url;
 
 use crate::git_util;
 use crate::manifest::Manifest;
+use crate::git_auth::GitAuth;
 use crate::package_name::PackageName;
 
 /// Configuration contained in the index's `config.json` file.
@@ -41,7 +42,7 @@ pub struct PackageIndex {
 
     /// A GitHub Personal Access Token to use before trying the machine's local
     /// configuration.
-    access_token: Option<String>,
+    access_token: Option<GitAuth>,
 
     /// If this index is contained in a temporary location, like when running
     /// tests or a registry server, hold onto it here so that it'll be dropped
@@ -51,11 +52,11 @@ pub struct PackageIndex {
 }
 
 impl PackageIndex {
-    pub fn new(index_url: &Url, access_token: Option<String>) -> anyhow::Result<Self> {
+    pub fn new(index_url: &Url, access_token: Option<GitAuth>) -> anyhow::Result<Self> {
         let path = index_path(index_url)?;
         let repository = git_util::open_or_clone(access_token.clone(), index_url, &path)?;
 
-        let index = Self {
+        let index: PackageIndex = Self {
             url: index_url.clone(),
             path,
             repository: Mutex::new(repository),
@@ -76,7 +77,7 @@ impl PackageIndex {
         &self.path
     }
 
-    pub fn new_temp(index_url: &Url, access_token: Option<String>) -> anyhow::Result<Self> {
+    pub fn new_temp(index_url: &Url, access_token: Option<GitAuth>) -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let path = temp_dir.path().to_owned();
         let repository = git_util::open_or_clone(access_token.clone(), index_url, &path)?;
