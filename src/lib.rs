@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod git_auth;
 pub mod commands;
 pub mod git_util;
 pub mod installation;
