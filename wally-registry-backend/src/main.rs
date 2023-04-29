@@ -227,6 +227,10 @@ pub fn server(figment: Figment) -> rocket::Rocket {
 
     println!("Using authentication mode: {:?}", config.auth);
 
+    if config.git_auth.is_some() {
+        println!("Using git authentication mode: {:?}", config.git_auth.as_ref().unwrap());
+    }
+
     println!("Using storage backend: {:?}", config.storage);
     let storage_backend: Box<dyn StorageBackend> = match config.storage {
         StorageMode::Local { path } => Box::new(LocalStorage::new(path)),
@@ -236,7 +240,7 @@ pub fn server(figment: Figment) -> rocket::Rocket {
     };
 
     println!("Cloning package index repository...");
-    let package_index = PackageIndex::new_temp(&config.index_url, config.github_token).unwrap();
+    let package_index = PackageIndex::new_temp(&config.index_url, config.git_auth).unwrap();
 
     println!("Initializing search backend...");
     let search_backend = SearchBackend::new(&package_index).unwrap();
