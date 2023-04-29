@@ -58,7 +58,7 @@ fn new_client_with_remote(auth: AuthMode, index_url: url::Url) -> Client {
             path: Some(package_path),
         },
         auth,
-        github_token: None,
+        git_auth: None,
         minimum_wally_version: None,
     }));
 
