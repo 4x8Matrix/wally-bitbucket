@@ -7,6 +7,8 @@
 use std::io;
 use std::path::Path;
 
+use std::{thread, time};
+
 use anyhow::{bail, format_err, Context};
 use git2::build::RepoBuilder;
 use git2::{
@@ -15,20 +17,25 @@ use git2::{
 use url::Url;
 use walkdir::WalkDir;
 
+use crate::git_auth::GitAuth;
+
 /// Based roughly on Cargo's approach to handling authentication, but very pared
 /// down.
 ///
 /// https://github.com/rust-lang/cargo/blob/79b397d72c557eb6444a2ba0dc00a211a226a35a/src/cargo/sources/git/utils.rs#L588
 fn make_credentials_callback(
-    access_token: Option<String>,
+    access_token: Option<GitAuth>,
     config: &git2::Config,
 ) -> impl (FnMut(&str, Option<&str>, CredentialType) -> Result<Cred, git2::Error>) + '_ {
+
     let mut cred_helper_tried = false;
     let mut token_tried = false;
 
     move |url, username, allowed_types| {
+        let auth = access_token.as_ref().unwrap();
+
         if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
-            if let Some(token) = &access_token {
+            if let GitAuth::GithubToken(token) = auth {
                 if !token_tried {
                     token_tried = true;
                     return Cred::userpass_plaintext(&token, "");
@@ -38,6 +45,24 @@ fn make_credentials_callback(
                     cred_helper_tried = true;
                     return Cred::credential_helper(config, url, username);
                 }
+            }
+        }
+
+        if allowed_types.contains(CredentialType::SSH_KEY) {
+            if let GitAuth::SSH(ssh_config) = auth {
+                let passphrase;
+    
+                match &ssh_config.passphrase {
+                    Some(response) => { passphrase = Some(response.as_str()) },
+                    None => { passphrase = None }
+                }
+    
+                return Cred::ssh_key(
+                    username.unwrap_or("git"),
+                    None,
+                    Path::new(&ssh_config.private_key),
+                    passphrase
+                )
             }
         }
 
@@ -91,7 +116,7 @@ pub fn init_test_repo(path: &Path) -> anyhow::Result<()> {
 }
 
 pub fn open_or_clone(
-    access_token: Option<String>,
+    access_token: Option<GitAuth>,
     url: &Url,
     path: &Path,
 ) -> anyhow::Result<Repository> {
@@ -116,7 +141,7 @@ pub fn open_or_clone(
     Ok(repo)
 }
 
-pub fn clone(access_token: Option<String>, url: &Url, into: &Path) -> anyhow::Result<Repository> {
+pub fn clone(access_token: Option<GitAuth>, url: &Url, into: &Path) -> anyhow::Result<Repository> {
     let git_config = git2::Config::open_default()?;
 
     let mut callbacks = RemoteCallbacks::new();
@@ -129,12 +154,13 @@ pub fn clone(access_token: Option<String>, url: &Url, into: &Path) -> anyhow::Re
     builder.fetch_options(fetch_options);
 
     let repo = builder.clone(url.as_str(), into)?;
+
     Ok(repo)
 }
 
 pub fn commit_and_push(
     repository: &Repository,
-    access_token: Option<String>,
+    access_token: Option<GitAuth>,
     message: &str,
     index_path: &Path,
     modified_file: &Path,
@@ -190,7 +216,7 @@ pub fn commit_and_push(
     ref_status
 }
 
-pub fn update_index(access_token: Option<String>, repository: &Repository) -> anyhow::Result<()> {
+pub fn update_index(access_token: Option<GitAuth>, repository: &Repository) -> anyhow::Result<()> {
     let git_config = git2::Config::open_default()?;
 
     let mut callbacks = RemoteCallbacks::new();
@@ -198,6 +224,7 @@ pub fn update_index(access_token: Option<String>, repository: &Repository) -> an
 
     let mut fetch_options = FetchOptions::new();
     fetch_options.remote_callbacks(callbacks);
+    fetch_options.update_fetchhead(true);
 
     repository
         .find_remote("origin")?
